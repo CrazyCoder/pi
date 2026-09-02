@@ -772,17 +772,31 @@ async function* parseSSE(response: Response, signal?: AbortSignal): AsyncGenerat
 	const reader = response.body.getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";
-	const onAbort = () => {
-		void reader.cancel().catch(() => {});
-	};
-	signal?.addEventListener("abort", onAbort, { once: true });
+	// Cancelling the reader is not enough on its own: a runtime that does not
+	// settle an already-pending read on cancellation leaves this loop parked, and
+	// the turn never ends. Race each read against the signal as well.
+	let onAbort: (() => void) | undefined;
+	let abortRejection: Promise<never> | undefined;
+	if (signal) {
+		abortRejection = new Promise<never>((_resolve, reject) => {
+			onAbort = () => {
+				void reader.cancel().catch(() => {});
+				reject(new Error("Request was aborted"));
+			};
+			signal.addEventListener("abort", onAbort, { once: true });
+		});
+		// Marked handled up front, because the race leaves it unobserved when a read wins.
+		abortRejection.catch(() => {});
+	}
 
 	try {
 		while (true) {
 			if (signal?.aborted) {
 				throw new Error("Request was aborted");
 			}
-			const { done, value } = await reader.read();
+			const { done, value } = abortRejection
+				? await Promise.race([reader.read(), abortRejection])
+				: await reader.read();
 			if (signal?.aborted) {
 				throw new Error("Request was aborted");
 			}
@@ -818,7 +832,7 @@ async function* parseSSE(response: Response, signal?: AbortSignal): AsyncGenerat
 			if (done) break;
 		}
 	} finally {
-		signal?.removeEventListener("abort", onAbort);
+		if (onAbort) signal?.removeEventListener("abort", onAbort);
 		try {
 			await reader.cancel();
 		} catch {}

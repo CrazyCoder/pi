@@ -439,15 +439,24 @@ async function* readMistralEvents(
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
 	let buffer = "";
-	const onAbort = () => {
-		void reader.cancel().catch(() => {});
-	};
-	signal.addEventListener("abort", onAbort, { once: true });
+	let onAbort: (() => void) | undefined;
+	// Cancelling the reader is not enough on its own: a runtime that does not
+	// settle an already-pending read on cancellation leaves this loop parked, and
+	// the turn never ends. Race each read against the signal as well.
+	const abortRejection = new Promise<never>((_resolve, reject) => {
+		onAbort = () => {
+			void reader.cancel().catch(() => {});
+			reject(signal.reason ?? new Error("Request was aborted"));
+		};
+		signal.addEventListener("abort", onAbort, { once: true });
+	});
+	// Marked handled up front, because the race leaves it unobserved when a read wins.
+	abortRejection.catch(() => {});
 
 	try {
 		while (true) {
 			if (signal.aborted) throw signal.reason;
-			const { done, value } = await reader.read();
+			const { done, value } = await Promise.race([reader.read(), abortRejection]);
 			if (signal.aborted) throw signal.reason;
 			buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
 
@@ -468,7 +477,7 @@ async function* readMistralEvents(
 			if (event !== MISTRAL_STREAM_DONE && event) yield event;
 		}
 	} finally {
-		signal.removeEventListener("abort", onAbort);
+		if (onAbort) signal.removeEventListener("abort", onAbort);
 		try {
 			await reader.cancel();
 		} catch {}
