@@ -411,13 +411,40 @@ async function* iterateSseMessages(
 	const state: SseDecoderState = { event: null, data: [], raw: [] };
 	let buffer = "";
 
+	// Checking `signal.aborted` between reads only helps if a read returns. Once
+	// `reader.read()` is pending it is never re-evaluated, so an abort raised
+	// while the stream is mid-response cannot unpark this loop on its own: the
+	// generator never returns, the turn never ends, and the session hangs with the
+	// spinner up until the process is killed.
+	//
+	// Cancel the reader from the abort listener, and race each read against the
+	// signal so the loop unparks even when the underlying stream does not reject
+	// a pending read on cancellation.
+	let onAbort: (() => void) | undefined;
+	let abortRejection: Promise<never> | undefined;
+	if (signal) {
+		abortRejection = new Promise<never>((_resolve, reject) => {
+			onAbort = () => {
+				void reader.cancel().catch(() => {});
+				reject(new Error("Request was aborted"));
+			};
+			signal.addEventListener("abort", onAbort, { once: true });
+		});
+		// The race leaves this rejection unobserved whenever a read wins, so mark it
+		// handled up front; otherwise aborting a completed stream would surface as an
+		// unhandled rejection.
+		abortRejection.catch(() => {});
+	}
+
 	try {
 		while (true) {
 			if (signal?.aborted) {
 				throw new Error("Request was aborted");
 			}
 
-			const { value, done } = await reader.read();
+			const { value, done } = abortRejection
+				? await Promise.race([reader.read(), abortRejection])
+				: await reader.read();
 			if (done) {
 				break;
 			}
@@ -457,6 +484,9 @@ async function* iterateSseMessages(
 			yield trailingEvent;
 		}
 	} finally {
+		if (signal && onAbort) {
+			signal.removeEventListener("abort", onAbort);
+		}
 		reader.releaseLock();
 	}
 }
