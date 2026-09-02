@@ -271,14 +271,40 @@ function createEventConverter(model: Model<"pi-messages">) {
 	};
 }
 
-async function* readPiMessagesEvents(stream: ReadableStream<Uint8Array>): AsyncGenerator<PiMessagesEvent> {
+async function* readPiMessagesEvents(
+	stream: ReadableStream<Uint8Array>,
+	signal?: AbortSignal,
+): AsyncGenerator<PiMessagesEvent> {
 	const decoder = new TextDecoder();
 	const reader = stream.getReader();
 	let buffer = "";
 
+	// Without this the loop cannot react to an abort at all: it parks in
+	// `reader.read()` until the provider closes the body, so the turn never ends.
+	// Cancel the reader from the listener, and race the read as well, because a
+	// runtime may not settle an already-pending read on cancellation.
+	let onAbort: (() => void) | undefined;
+	let abortRejection: Promise<never> | undefined;
+	if (signal) {
+		abortRejection = new Promise<never>((_resolve, reject) => {
+			onAbort = () => {
+				void reader.cancel().catch(() => {});
+				reject(new Error("Request was aborted"));
+			};
+			signal.addEventListener("abort", onAbort, { once: true });
+		});
+		// Marked handled up front, because the race leaves it unobserved when a read wins.
+		abortRejection.catch(() => {});
+	}
+
 	try {
 		while (true) {
-			const { done, value } = await reader.read();
+			if (signal?.aborted) {
+				throw new Error("Request was aborted");
+			}
+			const { done, value } = abortRejection
+				? await Promise.race([reader.read(), abortRejection])
+				: await reader.read();
 			buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
 			buffer = buffer.replace(/\r\n/g, "\n");
 
@@ -304,6 +330,9 @@ async function* readPiMessagesEvents(stream: ReadableStream<Uint8Array>): AsyncG
 			}
 		}
 	} finally {
+		if (signal && onAbort) {
+			signal.removeEventListener("abort", onAbort);
+		}
 		reader.releaseLock();
 	}
 }
@@ -409,7 +438,7 @@ export const stream: StreamFunction<"pi-messages", PiMessagesOptions> = (
 				throw new Error(`${model.provider} response has no body`);
 			}
 
-			for await (const piEvent of readPiMessagesEvents(response.body)) {
+			for await (const piEvent of readPiMessagesEvents(response.body, options?.signal)) {
 				const event = convertEvent(piEvent);
 				eventStream.push(event);
 				if (event.type === "done" || event.type === "error") {
