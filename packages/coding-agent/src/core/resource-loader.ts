@@ -614,7 +614,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				!this.disabledBuiltinExtensions.has(path.slice(BUILTIN_PATH_PREFIX.length)),
 		);
 
-		const packageWarnings = collectExtensionPackageWarnings(extensionPaths, metadataByPath);
+		const packageWarnings = this.collectExtensionPackageWarnings(extensionPaths, metadataByPath);
 		const extensionsResult = await this.loadFinalExtensionSet(extensionPaths, preTrustExtensions);
 		mergeExtensionWarnings(extensionsResult, [...installWarnings, ...packageWarnings]);
 		for (const p of this.additionalExtensionPaths) {
@@ -727,7 +727,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				resource.metadata,
 			]),
 		);
-		const packageWarnings = collectExtensionPackageWarnings(extensionPaths, metadataByPath);
+		const packageWarnings = this.collectExtensionPackageWarnings(extensionPaths, metadataByPath);
 		const installWarnings = collectPackageInstallWarnings(
 			resolvedPaths.installFailures,
 			cliExtensionPaths.installFailures,
@@ -1066,6 +1066,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		return merged;
+	}
+
+	private collectExtensionPackageWarnings(
+		extensionPaths: string[],
+		metadataByPath: Map<string, PathMetadata>,
+	): Array<{ path: string; warning: string }> {
+		if (this.settingsManager.getWarnings().extensionHostDependencies === false) return [];
+		return collectExtensionPackageWarnings(extensionPaths, metadataByPath);
 	}
 
 	private resolveResourcePath(p: string): string {
