@@ -89,6 +89,7 @@ export interface MarkdownSettings {
 
 export interface WarningSettings {
 	anthropicExtraUsage?: boolean; // default: true
+	extensionHostDependencies?: boolean; // default: true
 }
 
 /**

@@ -160,6 +160,13 @@ class WarningSettingsSubmenu extends Container {
 				currentValue: (this.state.anthropicExtraUsage ?? true) ? "true" : "false",
 				values: ["true", "false"],
 			},
+			{
+				id: "extension-host-dependencies",
+				label: "Extension host dependencies",
+				description: "Warn when an extension package lists a Pi-provided package in dependencies",
+				currentValue: (this.state.extensionHostDependencies ?? true) ? "true" : "false",
+				values: ["true", "false"],
+			},
 		];
 
 		this.settingsList = new SettingsList(
@@ -170,6 +177,10 @@ class WarningSettingsSubmenu extends Container {
 				switch (id) {
 					case "anthropic-extra-usage":
 						this.state = { ...this.state, anthropicExtraUsage: newValue === "true" };
+						onChange({ ...this.state });
+						break;
+					case "extension-host-dependencies":
+						this.state = { ...this.state, extensionHostDependencies: newValue === "true" };
 						onChange({ ...this.state });
 						break;
 				}
