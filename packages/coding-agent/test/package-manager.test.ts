@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DefaultPackageManager, type ProgressEvent, type ResolvedResource } from "../src/core/package-manager.ts";
+import {
+	DefaultPackageManager,
+	localPathKey,
+	type ProgressEvent,
+	type ResolvedResource,
+} from "../src/core/package-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
 function normalizeForMatch(value: string): string {
@@ -1456,6 +1461,30 @@ Content`,
 			expect(removed).toBe(true);
 			expect(settingsManager.getGlobalSettings().packages ?? []).toHaveLength(0);
 		});
+
+		it("should compare local package paths case-insensitively on Windows only", () => {
+			expect(localPathKey("c:\\work\\Pkg", "win32")).toBe(localPathKey("C:\\WORK\\pkg", "win32"));
+			expect(localPathKey("/work/Pkg", "linux")).not.toBe(localPathKey("/work/pkg", "linux"));
+			expect(localPathKey("/work/Pkg", "darwin")).toBe("/work/Pkg");
+		});
+
+		it.skipIf(process.platform !== "win32")(
+			"should match a local package whose drive letter differs in case",
+			() => {
+				const pkgDir = join(tempDir, "drive-case-pkg");
+				mkdirSync(join(pkgDir, "extensions"), { recursive: true });
+				writeFileSync(join(pkgDir, "extensions", "index.ts"), "export default function() {}");
+				const flipDrive = (path: string) =>
+					(path[0] === path[0].toLowerCase() ? path[0].toUpperCase() : path[0].toLowerCase()) + path.slice(1);
+
+				expect(packageManager.addSourceToSettings(pkgDir)).toBe(true);
+				expect(packageManager.addSourceToSettings(flipDrive(pkgDir))).toBe(false);
+				expect(settingsManager.getGlobalSettings().packages).toHaveLength(1);
+
+				expect(packageManager.removeSourceFromSettings(flipDrive(pkgDir))).toBe(true);
+				expect(settingsManager.getGlobalSettings().packages ?? []).toHaveLength(0);
+			},
+		);
 
 		it("should return false when adding the same git source with the same ref", () => {
 			const first = packageManager.addSourceToSettings("git:github.com/user/repo@v1");
