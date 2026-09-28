@@ -143,6 +143,9 @@ const MarkdownSettingsSchema = Type.Object({
 
 const WarningSettingsSchema = Type.Object({
 	anthropicExtraUsage: Type.Optional(Type.Boolean({ default: SETTINGS_DEFAULTS.warnings.anthropicExtraUsage })),
+	extensionHostDependencies: Type.Optional(
+		Type.Boolean({ default: SETTINGS_DEFAULTS.warnings.extensionHostDependencies }),
+	),
 });
 
 function codemodeMode(options?: TSchemaOptions) {

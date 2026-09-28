@@ -84,6 +84,27 @@ describe("DefaultResourceLoader", () => {
 			]);
 		});
 
+		it("should not warn about host dependencies when the warning is disabled", async () => {
+			const packageRoot = join(tempDir, "extension-package");
+			const extensionsDir = join(packageRoot, "extensions");
+			mkdirSync(extensionsDir, { recursive: true });
+			writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ dependencies: { typebox: "1.0.0" } }));
+			writeFileSync(join(extensionsDir, "package-extension.ts"), "export default function() {}");
+
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				settingsManager: SettingsManager.inMemory({
+					packages: [packageRoot],
+					warnings: { extensionHostDependencies: false },
+				}),
+			});
+			await loader.reload();
+
+			expect(loader.getExtensions().extensions).toHaveLength(1);
+			expect(loader.getExtensions().warnings).toEqual([]);
+		});
+
 		it("should fail when an extension package manifest cannot be parsed", async () => {
 			const packageRoot = join(tempDir, "invalid-extension-package");
 			const extensionsDir = join(packageRoot, "extensions");

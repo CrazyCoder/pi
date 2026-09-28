@@ -603,6 +603,10 @@
         "anthropicExtraUsage": {
           "type": "boolean",
           "default": true
+        },
+        "extensionHostDependencies": {
+          "type": "boolean",
+          "default": true
         }
       }
     },
