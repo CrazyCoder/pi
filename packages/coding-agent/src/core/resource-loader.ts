@@ -570,7 +570,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			? cliEnabledExtensions
 			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
 
-		const packageWarnings = collectExtensionPackageWarnings(extensionPaths, metadataByPath);
+		const packageWarnings = this.collectExtensionPackageWarnings(extensionPaths, metadataByPath);
 		const extensionsResult = await this.loadFinalExtensionSet(extensionPaths, preTrustExtensions);
 		mergeExtensionWarnings(extensionsResult, packageWarnings);
 		for (const p of this.additionalExtensionPaths) {
@@ -683,7 +683,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				resource.metadata,
 			]),
 		);
-		const packageWarnings = collectExtensionPackageWarnings(extensionPaths, metadataByPath);
+		const packageWarnings = this.collectExtensionPackageWarnings(extensionPaths, metadataByPath);
 		const extensionsResult = await loadExtensionsCached(extensionPaths, this.cwd, this.eventBus);
 		mergeExtensionWarnings(extensionsResult, packageWarnings);
 		if (!options.includeInlineFactories) {
@@ -1022,6 +1022,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		return merged;
+	}
+
+	private collectExtensionPackageWarnings(
+		extensionPaths: string[],
+		metadataByPath: Map<string, PathMetadata>,
+	): Array<{ path: string; warning: string }> {
+		if (this.settingsManager.getWarnings().extensionHostDependencies === false) return [];
+		return collectExtensionPackageWarnings(extensionPaths, metadataByPath);
 	}
 
 	private resolveResourcePath(p: string): string {
